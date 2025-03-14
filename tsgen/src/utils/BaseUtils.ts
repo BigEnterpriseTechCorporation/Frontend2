@@ -1,25 +1,37 @@
 import { DefinitionNode, DocumentNode, FieldDefinitionNode, InputObjectTypeDefinitionNode, ObjectTypeDefinitionNode } from "graphql";
-import { entityPrefix, referencePrefix, systemTypesList, systemFieldList, historySystemFields, statusHistoryFieldPostfix, inputTypePostfix, createInputTypePrefix, aggregateRootFieldName, rootDictionaryTypeName, referenceFields } from './Constants'
+import { entityPrefix, referencePrefix, systemTypesList, systemFieldList, historySystemFields, statusHistoryFieldPostfix, inputTypePostfix, createInputTypePrefix, aggregateRootFieldName, rootDictionaryTypeName, referenceFields, eventSpecificFieldNameList, entityRefCollectionPrefix } from './Constants'
+
+export const toLowerCaseFirstLetter = (str: string): string => {
+    return str.charAt(0).toLowerCase() + str.slice(1)
+}
+export const toUpperCaseFirstLetter = (str: string): string => {
+    return str.charAt(0).toUpperCase() + str.slice(1)
+}
 
 
-export const isDictionaryDefinition = (dn: ObjectTypeDefinitionNode): Boolean => {
-    return !!(dn.fields?.find(f =>
+
+export const isDictionaryDefinition = (node: ObjectTypeDefinitionNode): boolean => {
+    return !!(node.fields?.find(f =>
         f.name.value === aggregateRootFieldName && f.type.kind === "NamedType" && f.type.name.value === rootDictionaryTypeName)
     )
 }
 
-export const isAggregateRootDefinition = (dn: ObjectTypeDefinitionNode): Boolean => {
-    return !dn.fields?.find(f =>
-        f.name.value === aggregateRootFieldName
-    )
+const extractAggregateRootField = (node: ObjectTypeDefinitionNode): FieldDefinitionNode | undefined => {
+    return node.fields?.find(f => f.name.value === aggregateRootFieldName)
+}
+
+export const isAggregateRootDefinition = (node: ObjectTypeDefinitionNode): Boolean => {
+    return !extractAggregateRootField(node)
 }
 
 const isBusinessObjectTypeDefinition = (dn: DefinitionNode): dn is ObjectTypeDefinitionNode => {
     return dn.kind === "ObjectTypeDefinition"
         && dn.name.value.startsWith(entityPrefix)
+        && !(dn.name.value.startsWith(entityRefCollectionPrefix))
         && !(systemTypesList.includes(dn.name.value))
         && !(dn.name.value.endsWith(statusHistoryFieldPostfix))
         && !(dn.fields?.find(f => historySystemFields.includes(f.name.value)))
+        && !(dn.fields?.find(f => eventSpecificFieldNameList.includes(f.name.value)))
 }
 export const extractBusinessObjectTypeNodeList = (astNode: DocumentNode): readonly ObjectTypeDefinitionNode[] => {
     return astNode.definitions.filter(isBusinessObjectTypeDefinition)
@@ -43,9 +55,30 @@ export const extractInputObjectTypeForObjectType = (
     return inputObjectTypeNodeList.find(n => n.name.value === `${inputPrefix ?? createInputTypePrefix}${nodeName}${inputTypePostfix}`)
 }
 
-export const extractBusinessFieldNodeList = (node: ObjectTypeDefinitionNode): readonly FieldDefinitionNode[] => {
+export const extractNodeBusinessFieldList = (node: ObjectTypeDefinitionNode): readonly FieldDefinitionNode[] => {
     return node.fields?.filter(f => !(systemFieldList.includes(f.name.value))) ?? []
 }
+
+export const extractEntityName = (name: string): string => {
+    if (name.startsWith(entityPrefix))
+     return name.substring(entityPrefix.length)
+
+    return name    
+}
+
+export const extractNodeAggregateName = (node: ObjectTypeDefinitionNode): string => {
+
+    if (isAggregateRootDefinition(node))
+        return node.name.value
+
+    const aggregateRootField = extractAggregateRootField(node)
+
+    return aggregateRootField?.type.kind === "NamedType" ?
+        aggregateRootField.type.name.value :
+        ""
+}
+
+
 
 const isEmbeddedObjectTypeDefinition = (dn: DefinitionNode): dn is ObjectTypeDefinitionNode => {
     return dn.kind === "ObjectTypeDefinition"

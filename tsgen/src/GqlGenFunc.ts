@@ -1,24 +1,23 @@
 import { DocumentNode } from 'graphql'
-import { extractBusinessObjectTypeNodeList, extractEmbeddedObjectTypeNodeList, extractInputObjectTypeForObjectType, extractInputObjectTypeNodeList, isDictionaryDefinition } from './utils/BaseUtils'
-import { getCreateManyMutation, getCreateMutation, getDeleteManyMutation, getDeleteMutation, getFragment, getSearchQuery, getUpdateMutation, getUpdateOrCreateMutation } from './utils/GqlGenUtils'
+import { extractBusinessObjectTypeNodeList, extractEmbeddedObjectTypeNodeList, extractEntityName, extractInputObjectTypeForObjectType, extractInputObjectTypeNodeList, extractNodeAggregateName, isDictionaryDefinition } from './utils/BaseUtils'
+import { getGetMutation, getCreateManyMutation, getCreateMutation, getDeleteManyMutation, getDeleteMutation, getFragment, getSearchQuery, getUpdateMutation, getUpdateOrCreateMutation } from './utils/GqlGenUtils'
 import { print } from 'graphql/language/printer'
 import { deleteManyInputTypePrefix } from './utils/Constants'
+import { GeneratedGqlForAggregate } from './utils/types/Basic'
 
 
-export const getGql = (astNode: DocumentNode): string => {
+export const getGqlData = (astNode: DocumentNode, config: { entityList: string[] }): GeneratedGqlForAggregate[] => {
 
-    // return JSON.stringify(astNode, null, 2)
+    const result: GeneratedGqlForAggregate[] = []
 
     const inputNodeList = extractInputObjectTypeNodeList(astNode)
-    // return JSON.stringify(inputNodeList, null, 2)
-
     const businessObjectTypeNodeList = extractBusinessObjectTypeNodeList(astNode)
-
     const embeddedObjectTypeNodeList = extractEmbeddedObjectTypeNodeList(astNode)
 
+    businessObjectTypeNodeList//.filter(f => !isDictionaryDefinition(f))
+        .forEach(node => {
 
-    return businessObjectTypeNodeList.filter(f => !isDictionaryDefinition(f))
-        .map(node => {
+            const isDictionary = isDictionaryDefinition(node)
 
             const fragment = getFragment(
                 node,
@@ -26,29 +25,37 @@ export const getGql = (astNode: DocumentNode): string => {
                 embeddedObjectTypeNodeList,
                 true
             )
-            if (fragment) {
-                const inputNode = extractInputObjectTypeForObjectType(inputNodeList, node)
 
-                const updateOrCreateMutationNode = inputNode ? getUpdateOrCreateMutation(inputNode) : undefined
-                const createManyMutationNode = getCreateManyMutation(node)
+            const inputNode = extractInputObjectTypeForObjectType(inputNodeList, node)
 
-                const deleteManyInputNode = extractInputObjectTypeForObjectType(inputNodeList, node, deleteManyInputTypePrefix)
-                const deleteManyMutationNode = getDeleteManyMutation(node, deleteManyInputNode)
+            const updateOrCreateMutationNode = inputNode ? getUpdateOrCreateMutation(inputNode, isDictionary) : undefined
+            const createManyMutationNode = getCreateManyMutation(node)
 
-                return (
-                    print(fragment)
-                    + "\n" + print(getSearchQuery(node))
-                    + "\n" + print(getCreateMutation(node))
-                    + "\n" + print(getUpdateMutation(node))
-                    + "\n" + print(getDeleteMutation(node))
-                    + "\n" + ((updateOrCreateMutationNode) ? print(updateOrCreateMutationNode!) : "")
-                    + "\n" + ((createManyMutationNode) ? print(createManyMutationNode!) : "")
-                    + "\n" + ((deleteManyMutationNode) ? print(deleteManyMutationNode!) : "")
-                )
-            }
-        }
-        ).join("\n")
+            const deleteManyInputNode = extractInputObjectTypeForObjectType(inputNodeList, node, deleteManyInputTypePrefix)
+            const deleteManyMutationNode = getDeleteManyMutation(node, deleteManyInputNode)
 
+            const businessObjectTypeGqlStr =
+                print(fragment)
+                + "\n" + print(getSearchQuery(node))
+                + "\n" + print(getGetMutation(node, isDictionary, "ForUpdate"))
+                + (isDictionary ? "" : ("\n" + print(getCreateMutation(node))))
+                + (isDictionary ? "" : ("\n" + print(getUpdateMutation(node))))
+                + (isDictionary ? "" : ("\n" + print(getDeleteMutation(node))))
+                + (isDictionary ? ("\n" + print(updateOrCreateMutationNode!)) : "")
+//                + ((updateOrCreateMutationNode) ? ("\n" + print(updateOrCreateMutationNode!)) : "")
+//                + ((createManyMutationNode && !isDictionary) ? ("\n" + print(createManyMutationNode!)) : "")
+//                + ((deleteManyMutationNode && !isDictionary) ? ("\n" + print(deleteManyMutationNode!)) : "")
+
+
+            const nodeAggregateName = extractNodeAggregateName(node)
+            const resultAggregate = result.find(f => f.aggregateName === nodeAggregateName) ??
+                result[result.push({ aggregateName: extractEntityName(nodeAggregateName), aggregateEntityList: [] }) - 1]
+
+            resultAggregate.aggregateEntityList.push({ entitiyName: extractEntityName(node.name.value), gqlStr: businessObjectTypeGqlStr })
+        })
+
+
+    return result
 }
 
 

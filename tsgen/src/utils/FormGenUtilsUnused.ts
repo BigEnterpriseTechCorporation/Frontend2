@@ -3,6 +3,11 @@ import { entityPrefix, entityCollectionPrefix, enumCollectionPrefix, primitiveTy
 import { extractNodeBusinessFieldList } from "./BaseUtils"
 import graphql from 'graphql-tag'
 
+const toLowerCaseFirstLetter = (str: string): string => {
+    return str.charAt(0).toLowerCase() + str.slice(1)
+}
+
+
 const getInnerReferenceFragmentField = (
     fdn: FieldDefinitionNode,
     businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[],
@@ -10,13 +15,11 @@ const getInnerReferenceFragmentField = (
     simpleMode: boolean
 ): string | undefined => {
 
-
-    const fieldNodeType = fdn.type.kind === "NonNullType" ? fdn.type.type : fdn.type
-
-    if (fieldNodeType.kind === "NamedType"
+    if (fdn.type.kind === "NonNullType"
+        && fdn.type.type.kind === "NamedType"
     ) {
 
-        const innerReferenceName = fieldNodeType.name.value
+        const innerReferenceName = fdn.type.type.name.value
 
         const businessObjectTypeNode =
             businessObjectTypeNodeList.find(n => entityPrefix.concat(innerReferenceName) === n.name.value)
@@ -25,7 +28,7 @@ const getInnerReferenceFragmentField = (
             if ((!simpleMode)) {
 
                 const businessFieldList = extractNodeBusinessFieldList(businessObjectTypeNode)
-                const businessFieldListStr = getFragmentFieldListStr(
+                const businessFieldListStr = getFragmentFieldList(
                     businessFieldList,
                     businessObjectTypeNodeList,
                     embeddedObjectTypeNodeList,
@@ -56,8 +59,6 @@ const getChildListFragmentField = (
     simpleMode: boolean
 ): string | undefined => {
 
-
-
     if (fdn.type.kind === "NonNullType"
         && fdn.type.type.kind === "NamedType"
         && fdn.type.type.name.value.startsWith(entityCollectionPrefix)
@@ -70,7 +71,7 @@ const getChildListFragmentField = (
 
         if (!simpleMode && businessObjectTypeNode) {
             const businessFieldList = extractNodeBusinessFieldList(businessObjectTypeNode)
-            const businessFieldListStr = getFragmentFieldListStr(
+            const businessFieldListStr = getFragmentFieldList(
                 businessFieldList,
                 businessObjectTypeNodeList,
                 embeddedObjectTypeNodeList,
@@ -127,7 +128,7 @@ const getReferenceFragmentField = (
         if ((!simpleMode) && businessObjectTypeNode) {
 
             const businessFieldList = extractNodeBusinessFieldList(businessObjectTypeNode)
-            const businessFieldListStr = getFragmentFieldListStr(
+            const businessFieldListStr = getFragmentFieldList(
                 businessFieldList,
                 businessObjectTypeNodeList,
                 embeddedObjectTypeNodeList,
@@ -198,7 +199,7 @@ const getPrimitiveFragmentField = (fdn: FieldDefinitionNode): string | undefined
         `
 }
 
-const getFragmentFieldListStr = (
+const getFragmentFieldList = (
     businessFieldList: readonly FieldDefinitionNode[],
     businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[],
     embeddedObjectTypeNodeList: readonly ObjectTypeDefinitionNode[],
@@ -230,7 +231,7 @@ export const getFragment = (
     const basicFieldNameList = ['id', '__typename']
 
     const businessFieldListStr = basicFieldNameList.join("\n").concat(
-        getFragmentFieldListStr(
+        getFragmentFieldList(
             extractNodeBusinessFieldList(node).filter(n => !basicFieldNameList.includes(n.name.value)),
             businessObjectTypeNodeList,
             embeddedObjectTypeNodeList,
@@ -251,23 +252,6 @@ export const getSearchQuery = (node: ObjectTypeDefinitionNode): DocumentNode => 
 
     return graphql`query search${nodeName}($cond: String){ search${nodeName}(cond: $cond){elems{...${nodeName}${generatedFragmentPostfix}}}}`
 }
-
-export const getGetMutation = (node: ObjectTypeDefinitionNode, isDictionary: boolean, namePrefix: string | undefined): DocumentNode => {
-
-    const prefixedNodeName = node.name.value
-    const nodeName = prefixedNodeName.substring(entityPrefix.length)
-
-    return graphql`
-        mutation get${namePrefix}${nodeName}($id: ID!){
-            ${isDictionary ? "packet: dictionaryPacket" : "packet"}{
-                get${nodeName}(id:$id){
-                    ...${nodeName}${generatedFragmentPostfix}
-                }
-            }
-        }`
-}
-
-
 
 export const getCreateMutation = (node: ObjectTypeDefinitionNode): DocumentNode => {
 

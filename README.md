@@ -4,7 +4,7 @@
 
 ### Build gql generator plugin from folder [tsgen](tsgen)
 ```
-npm run gqlgen
+npm run allgen
 ```
 
 ### View generated GraphQl request in file [requests.graphql](graphql%2F__generate%2Frequests.graphql)
