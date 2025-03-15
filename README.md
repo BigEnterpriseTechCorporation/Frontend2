@@ -1,6 +1,6 @@
 # simple-ds-gql-generator
 
-### Add your schema.graphql to folder [graphql](graphql)
+### Add your schema.graphql to folder [graphql](src/graphql)
 
 ### Build gql generator plugin from folder [tsgen](tsgen)
 ```
