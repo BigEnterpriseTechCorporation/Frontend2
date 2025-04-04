@@ -35,6 +35,7 @@ cd ..
 ### Установка зависимостей и генерация кода
 ```bash
 npm install
+npm run get-schema
 npm run allgen
 ```
 
