@@ -52,7 +52,7 @@
     "webpack-dev-server": "^3.11.2"
   },
   "scripts": {
-    "start": "(set NODE_OPTIONS=--openssl-legacy-provider) && webpack serve --config ./webpack.dev.config.js",
+    "start": "webpack serve --config ./webpack.dev.config.js",
     "gqlgen": "graphql-codegen --config gqlgen.ts",
     "codegen": "graphql-codegen --config codegen.ts",
     "permgen": "graphql-codegen --config permgen.ts",

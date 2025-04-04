@@ -14,7 +14,7 @@ cd simple-ds-gql-generator
 ### Настройка окружения
 1. Создайте файл `.env` и добавьте в него endpoint GraphQL:
 ```
-REACT_APP_GRAPHQL_ENDPOINT=http://your-graphql-endpoint/graphql
+DS_ENDPOINT=http://your-graphql-server/graphql
 ```
 
 2. Если у вас возникают проблемы с OpenSSL при запуске на новых версиях Node.js, установите следующую переменную:
