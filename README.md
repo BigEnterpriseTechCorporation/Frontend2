@@ -9,7 +9,6 @@
 ```bash
 git clone https://gitverse.ru/bvvmail/simple-ds-gql-generator
 cd simple-ds-gql-generator
-git checkout gql-ts-antd-gen
 ```
 
 ### Настройка окружения
