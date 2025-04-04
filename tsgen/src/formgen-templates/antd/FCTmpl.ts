@@ -1,6 +1,6 @@
 import { toLowerCaseFirstLetter, toUpperCaseFirstLetter } from "../../utils/BaseUtils"
 import { updateOrCreatePrefix, updatePrefix, mandatoryFieldList, primitiveTypeList, referencePrefix, enumPrefix, referencePostfix, rootDictionaryTypeName, createPrefix } from "../../utils/Constants"
-import { Mutation, MutationKind, Query, TypedField, TypedInput } from "../../utils/types/Basic"
+import { Mutation, MutationKind, Query, RefField, TypedField, TypedInput } from "../../utils/types/Basic"
 import { camelCase } from 'change-case-all'
 
 const { SIMPLE, ON_INSTANCE } = MutationKind
@@ -22,37 +22,57 @@ export const extractPrimitiveFieldNameList = (typedFieldList: TypedField[]): str
     }).map(f => f.fieldName)
 }
 
-export const getEntityListFC = (aggName: string, entityName: string, fieldNameList: string[]): string => {
+export const getEntityListFC = (aggName: string, entityName: string, fieldNameList: string[], childEntityRefList: RefField[]): string => {
 
     const camelCasedEntityName = toUpperCaseFirstLetter(camelCase(entityName))
 
     const columnsStr = JSON.stringify(
-        ["id", "actions", ...fieldNameList].map(f => { return { title: f, key: f, dataIndex: f } })
+        ["id", ...fieldNameList.concat(childEntityRefList.map(rf => rf.fieldName)),].map(f => { return { title: f, key: f, dataIndex: f } })
         , null, 2)
 
     const fieldMappingStr = fieldNameList.map(f => {
         return `                    ${f}: elem.${f},`
     }).join("\n")
 
+    const childEntityMappingStr = childEntityRefList.map(f => {
+        return `                    ${f.fieldName}: <Link to={\`/${aggName}Agg/${f.fieldType}/List/${f.backRefereceAttributeName}=\${elem.id}\`}>{"{***}"}</Link>,`
+    }).join("\n")
+
+
     return "" +
         `import React, { FC, useState } from 'react';
-import { Space, Spin, Table } from 'antd';
-import { Link } from 'react-router';
+import { Button, Space, Spin, Table } from 'antd';
+import { Link, useNavigate, useParams } from 'react-router';
 import { useApolloClient } from '@apollo/client';
 
+import { extractParamName, extractParamValue } from '../../../../basic/Utils';
 import ErrorModal from '../../../basic/ErrorModal';
-
 import { useSearch${camelCasedEntityName}Query } from '../../../../__generate/graphql-frontend'
 
-export const ${entityName}List: FC = () => {
+export const ${entityName}List: FC<{ selected${entityName}?: string | null, setSelected${entityName}?: (value: string) => void }> = ({ selected${entityName}, setSelected${entityName} }) => {
 
     const client = useApolloClient()
 
-    const columns = ${columnsStr}
+    const navigate = useNavigate();
+
+    const { filterStr } = useParams()
+
+    const columns = ${columnsStr}.concat((selected${entityName} === null) ? [] : [
+        {
+            "title": "actions",
+            "key": "actions",
+            "dataIndex": "actions"
+        }])
 
     const [error, setError] = useState<Error | null>(null)
 
-    const { data, loading, error: queryError } = useSearch${camelCasedEntityName}Query()
+    const { data, loading, error: queryError } = useSearch${camelCasedEntityName}Query(
+        {
+            variables: {
+                cond: (filterStr && filterStr !== 'undefined' && selected${entityName} !== null ) ? \`it.\${extractParamName(filterStr)}.id=='\${extractParamValue(filterStr)}'\` : null
+            }
+        })
+
     const elemList = data?.search${entityName}.elems
 
     const mapToView = (list: typeof elemList) => {
@@ -66,21 +86,36 @@ export const ${entityName}List: FC = () => {
           </Space>,
           id: elem.id,
 ${fieldMappingStr}
+${childEntityMappingStr}
                 }
             })
         )
     }
 
     if (loading) return (<Spin tip="Loading..." />);
-    if (error) return (<ErrorModal error={error} setError={setError} />)
-
-    client.refetchQueries({include:["search${entityName}"]})
-    return (
-            <Table
-                columns={columns}
-                dataSource={mapToView(elemList)}
-            />
-    )
+    if (queryError) {
+        return (<ErrorModal error={queryError} setError={setError} />)
+    } else {
+    
+        client.refetchQueries({include:["search${entityName}"]})
+        return (
+            <Space direction='vertical'>
+                {selected${entityName} === undefined && <Button
+                    onClick={() => {
+                        navigate(\`/${aggName}Agg/${entityName}/Create/\${filterStr}\`)
+                    }}
+                >
+                    Create
+                </Button>}
+        
+                <Table
+                    columns={columns}
+                    dataSource={mapToView(elemList)}
+                    onRow={(record) => ({ onClick: event => { if (setSelected${entityName}) setSelected${entityName}(record.id) } })}
+                />
+            </Space>
+        )
+    }
 }
 `
 }
@@ -161,10 +196,13 @@ import { ${entityName}Update } from './${entityName}/${entityName}Update';` +
         return `
         <Route key={"${entityName}"} path="${entityName}" element={<${entityName}Base />}>
             <Route key={"List"} path="List" element={<${entityName}List />} />
+            <Route key={"ListWithFilter"} path="List/:filterStr" element={<${entityName}List />} />
             <Route key={"Create"} path="Create" element={<${entityName}Create />} />
+            <Route key={"CreateWithFilter"} path="Create/:filterStr" element={<${entityName}Create />} />
             <Route key={"Update"} path="Update/:${toLowerCaseFirstLetter(entityName)}Id" element={<${entityName}Update />} />` +
-            (isDictionary ? "" : `            <Route key={"Delete"} path="Delete/:${toLowerCaseFirstLetter(entityName)}Id" element={<${entityName}Delete />} />`) +
-        `        </Route>`
+            (isDictionary ? "" : `            <Route key={"Delete"} path="Delete/:${toLowerCaseFirstLetter(entityName)}Id" element={<${entityName}Delete />} />
+`) +
+            `        </Route>`
     }).join("")
 
 
@@ -254,17 +292,33 @@ const getMutationFieldFormFC = (mutation: Mutation, entityName: string, formPost
 
     if (input && typeof input.inputType != 'string') {
 
-        const formItemListStr = input.inputType.map(it => {
-            return extractFormItemStr(it)
-        }).join("")
+        const fieldToFormList = input.inputType.map(it => extractFormItemListStr(it))
+
+        const importListStr = fieldToFormList.map(f => f?.importStr).join("")
+        const formItemListStr = fieldToFormList.map(f => f?.formItemStr).join("")
+        const stateParamListStr = fieldToFormList.map(f => f?.stateParamStr).join("")
+        const modalListStr = fieldToFormList.map(f => f?.modalStr).join("")
+
+
+
+        // const formItemListStr = input.inputType.map(it => {
+        //     return extractFormItemListStr(it)?.formItemList
+        // }).join("")
+
+        // const importStr = input.inputType.map(it => {
+        //     return extractFormItemListStr(it)?.importStr
+        // }).join("")
+
 
         return `
-import React, { FC } from 'react';
+import React, { FC, useState } from 'react';
 
-import { DatePicker, Checkbox, Form, Input } from 'antd';
+import { DatePicker, Checkbox, Form, Input, Select, Space, Button, Modal  } from 'antd';
+const { Option } = Select
 
 import { InputParameters } from './${entityName}${formPostfix}';
 import moment from 'moment';
+${importListStr}
 
 interface FormProps{
     inputParameters: InputParameters
@@ -273,10 +327,15 @@ interface FormProps{
 
 export const ${entityName}${formPostfix}Form: FC<FormProps> = ({ inputParameters, changeInputParameters }) => {
 
+${stateParamListStr}
+
     return (
-        <Form>
+        <>
+            <Form>
 ${formItemListStr}
-        </Form>
+            </Form>
+${modalListStr}
+        </>
     )
 }`
     }
@@ -284,31 +343,38 @@ ${formItemListStr}
     return ""
 }
 
-const extractFormItemStr = (typedInput: TypedInput): string => {
+const extractFormItemListStr = (typedInput: TypedInput): { importStr: string, formItemStr: string, stateParamStr: string, modalStr } | undefined => {
     const typedInputName = typedInput.inputName
 
-    if (typedInput.inputType === 'String' || typedInput.inputType === 'ID')
-        return `
+    if (typedInput.inputRefTypeName.refAggName === "" ) {
+
+        if (typedInput.inputType === 'String' || typedInput.inputType === 'ID')
+            return {
+                formItemStr: `
             <Form.Item label="${typedInputName}">
                 <Input
                     value={inputParameters.${typedInputName}!}
                     onChange={e => changeInputParameters({ ${typedInputName}: e.target.value })}
                 />
-            </Form.Item>`
+            </Form.Item>`, importStr: "", stateParamStr: "", modalStr: ""
+            }
 
 
-    if (typedInput.inputType === '_Date')
-        return `
+        if (typedInput.inputType === '_Date')
+            return {
+                formItemStr: `
             <Form.Item label="${typedInputName}">
                 <DatePicker
                     value={inputParameters.${typedInputName} ? moment(inputParameters.${typedInputName}, "YYYY-MM-DD") : null}
                     onChange={moment => changeInputParameters({ ${typedInputName}: moment?.format("YYYY-MM-DD") })}
                     format="YYYY-MM-DD"
                 />
-            </Form.Item>`
+            </Form.Item>`, importStr: "", stateParamStr: "", modalStr: ""
+            }
 
-    if (typedInput.inputType === 'Boolean')
-        return `
+        if (typedInput.inputType === 'Boolean')
+            return {
+                formItemStr: `
             <Form.Item label="${typedInputName}">
                 <Checkbox
                     checked={inputParameters?.${typedInputName}!}
@@ -317,34 +383,85 @@ const extractFormItemStr = (typedInput: TypedInput): string => {
                     }
                     }
                 />
+            </Form.Item>`, importStr: "", stateParamStr: "", modalStr: ""
+            }
+
+        if (typeof typedInput.inputType === 'string' && typedInput.inputType.startsWith(enumPrefix)) {
+            const enumTypeName = typedInput.inputType.substring(enumPrefix.length)
+
+            return {
+                formItemStr: `
+            <Form.Item>
+                <Select showArrow={true}
+                    onChange={(value) => {
+                        changeInputParameters({ ${typedInputName}: value })
+                    }}
+                    value={inputParameters?.${typedInputName}!}
+                >
+                    {Object.keys(_En_${enumTypeName}).map(it =>
+                        <Option key={it} value={_En_${enumTypeName}[it as keyof typeof _En_${enumTypeName}]}>
+                            {it}
+                        </Option>
+                    )}
+                </Select>
             </Form.Item>
-`
+`, importStr: `import {_En_${enumTypeName} } from '../../../../__generate/graphql-frontend'
+`, stateParamStr: "", modalStr: ""
+            }
+        }
+    } else {
+        const refEntityName = typedInput.inputRefTypeName.refEntityName
+        const refAggName = typedInput.inputRefTypeName.refAggName
+        const isExtRef = refEntityName.startsWith(referencePrefix) && refEntityName.endsWith(referencePostfix)
+        const refTypeName = isExtRef ?
+            refEntityName.substring(referencePrefix.length).slice(0, -referencePostfix.length) :
+            refEntityName
 
+        const upperCaseTypedInputName = toUpperCaseFirstLetter(typedInputName)
 
+        return {
+            formItemStr: `
+            <Form.Item label="${typedInputName}">
+                <Space>
+                    <Input
+                        value={inputParameters.${isExtRef ? typedInputName + "?.entityId!" : typedInputName}}
+                        onChange={e => changeInputParameters({ ${typedInputName}: ${isExtRef ? "{ entityId: e.target.value }" : "e.target.value"}})}
+                    />
+                    <Button onClick={() => setSelected${upperCaseTypedInputName}Id(null)}>{"..."}</Button>
+                </Space>
+            </Form.Item>`
+            , importStr: `import { ${refTypeName}List } from '../../${refAggName}/${refTypeName}/${refTypeName}List';`
+            , stateParamStr: `
+    const [selected${upperCaseTypedInputName}Id, setSelected${upperCaseTypedInputName}Id] = useState<string | undefined | null>()
+    if (selected${upperCaseTypedInputName}Id) {
+        changeInputParameters({ ${typedInputName}: ${isExtRef ? "{ entityId: selected" + upperCaseTypedInputName + "Id }" : "selected" + upperCaseTypedInputName + "Id"} })
+        setSelected${upperCaseTypedInputName}Id(undefined)
+    }`
+            , modalStr: `
+    <Modal
+        visible = { selected${upperCaseTypedInputName}Id === null}
+        footer = { null}
+        width = "90%"
+        onCancel = {() => setSelected${upperCaseTypedInputName}Id(undefined)}
+    >
+        <${refTypeName}List selected${refTypeName}={selected${upperCaseTypedInputName}Id } setSelected${refTypeName}={setSelected${upperCaseTypedInputName}Id }> </${refTypeName}List>
+    </Modal>`
+        }
 
-
-    return ""
+    }
+    return undefined
 }
 
 
 export const getEntityBaseFC = (aggName: string, entityName: string): string => {
     return `
-import { Button } from 'antd';
-import React, { FC, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router';
+import React, { FC } from 'react';
+import { Outlet } from 'react-router';
 
 
 export const ${entityName}Base: FC = () => {
-    const navigate = useNavigate();
     return (
         <>
-            <Button
-                onClick={() => {
-                    navigate("/${aggName}Agg/${entityName}/Create")
-                }}
-            >
-                Create
-            </Button>
             <Outlet />
         </>
     )
@@ -468,10 +585,15 @@ const extractMapToInputStr = (typedInput: TypedInput): string => {
         return `
         ${typedInputName}: data.${typedInputName}?.id,`
 
-    if (typedInput.inputType === 'String' || typedInput.inputType === 'ID' || typedInput.inputType === '_Date')
-
+    if (typedInput.inputType === 'String' || typedInput.inputType === 'ID' || typedInput.inputType === '_Date' || (typeof typedInput.inputType === "string" && typedInput.inputType.startsWith(enumPrefix)))
         return `
         ${typedInputName}: data.${typedInputName},`
+
+    const refEntityName = typedInput.inputRefTypeName.refEntityName
+    if (refEntityName.startsWith(referencePrefix) && refEntityName.endsWith(referencePostfix)) {
+        return `
+        ${typedInputName}: {entityId: data.${typedInputName}.entityId!},`
+    }
 
     return ""
 }
@@ -498,14 +620,16 @@ import ErrorModal from '../../../basic/ErrorModal';
 import { _Create${camelCasedEntityName}Input, use${upperFirstLetterMutationName}Mutation } from '../../../../__generate/graphql-frontend'
 import { ${camelCasedEntityName}CreateForm } from './${camelCasedEntityName}CreateForm';
 
-import { useNavigate } from 'react-router'
-
+import { useNavigate, useParams } from 'react-router'
+import { extractParamName, extractParamValue } from '../../../../basic/Utils';
 
 export type InputParameters = Partial<_Create${camelCasedEntityName}Input>
 
 export const ${camelCasedEntityName}Create: FC = () => {
 
     const navigate = useNavigate();
+
+    const { filterStr } = useParams()
 
     const [${mutationName}Mutation, { error: errorCreate, data: dataCreate, loading: loadingCreate }] = use${upperFirstLetterMutationName}Mutation()
 
@@ -531,12 +655,15 @@ export const ${camelCasedEntityName}Create: FC = () => {
     return (
         <>
             <Space direction='vertical'>
-                <${camelCasedEntityName}CreateForm inputParameters={inputParameters} changeInputParameters={changeInputParameters}></${camelCasedEntityName}CreateForm>
+                <${camelCasedEntityName}CreateForm 
+                    inputParameters={filterStr ? Object.assign(inputParameters, { [extractParamName(filterStr)]: extractParamValue(filterStr) }) : inputParameters}
+                    changeInputParameters={changeInputParameters}
+                ></${camelCasedEntityName}CreateForm>
                 <Space>
                     <Button type="primary" htmlType="submit"
                         onClick={() => {
                             ${mutationName}Mutation({ variables: { input: Object.assign(inputParameters) as _Create${camelCasedEntityName}Input } }).then(() => {
-                                navigate("/${aggName}Agg/${camelCasedEntityName}/List")
+                                navigate("/${aggName}Agg/${camelCasedEntityName}/List/" + (filterStr === 'undefined' ? "" : filterStr))
                             })
                         }}
                     >
@@ -544,7 +671,7 @@ export const ${camelCasedEntityName}Create: FC = () => {
                     </Button>
                     <Button
                         onClick={() => {
-                            navigate("/${aggName}Agg/${camelCasedEntityName}/List")
+                            navigate("/${aggName}Agg/${camelCasedEntityName}/List/" + (filterStr === 'undefined' ? "" : filterStr))
                         }}
                     >
                         Cancel

@@ -1,6 +1,6 @@
 import { CodegenConfig } from '@graphql-codegen/cli'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { AggList } from './tsgen/src/utils/types/Basic';
+import { AggList, FormGenConfig } from './tsgen/src/utils/types/Basic';
 
 import { getMutationFormFC, getEntityBaseFC, getEntityUpdateFC, getEntityCreateFC, getEntityListFC, extractPrimitiveFieldNameList, getMainMenuFC, getAggMenuFC, getEntityDeleteFC } from './tsgen/src/formgen-templates/antd/FCTmpl'
 import { rootDictionaryTypeName, updateOrCreatePrefix, createPrefix, updatePrefix, deletePrefix } from './tsgen/src/utils/Constants'
@@ -13,7 +13,9 @@ const config: CodegenConfig = {
   generates: {
     'src/components/__generate/FormGenResult.json': {
       plugins: ['formgen-plugin.js'],
-      config: { customFlag: ["ssd", "ffff"] }
+      config: { 
+        generateChildCollectionField: true
+      } as FormGenConfig
     }
   },
   hooks: {
@@ -31,10 +33,10 @@ const config: CodegenConfig = {
         if (!existsSync(aggPath)) {
           mkdirSync(aggPath)
         }
-        writeFileSync(aggPath + aggName + "Agg.tsx", getAggMenuFC(aggName, agg.entityNameList.map(e => e.entityName)))
-        agg.entityNameList.forEach(entity => {
+        writeFileSync(aggPath + aggName + "Agg.tsx", getAggMenuFC(aggName, agg.entityList.map(e => e.name)))
+        agg.entityList.forEach(entity => {
 
-          const entityName = entity.entityName
+          const entityName = entity.name
 
           const entityPath = aggPath + entityName + "/"
           if (!existsSync(entityPath)) {
@@ -43,20 +45,18 @@ const config: CodegenConfig = {
 
           writeFileSync(entityPath + entityName + "Base.tsx", getEntityBaseFC(aggName, entityName))
 
+          if (entity.queryList && entity.queryList.length > 0) {
 
+            const getFirstQuery = entity.queryList[0]
 
-          if (entity.entityQueryList && entity.entityQueryList.length > 0) {
-
-            const getFirstQuery = entity.entityQueryList[0]
-
-            const entityListFC = getEntityListFC(aggName, entityName, extractPrimitiveFieldNameList(getFirstQuery.fieldList))
+            const entityListFC = getEntityListFC(aggName, entityName, extractPrimitiveFieldNameList(getFirstQuery.fieldList), entity.childEntityRefList)
             writeFileSync(entityPath + entityName + "List.tsx", entityListFC)
 
-            if (entity.entityMutationList && entity.entityMutationList?.length > 0) {
+            if (entity.mutationList && entity.mutationList?.length > 0) {
 
 
               // Generate Create Form
-              entity.entityMutationList.filter(m => m.mutationName === (isDictionary ? updateOrCreatePrefix : createPrefix) + entityName).forEach(m => {
+              entity.mutationList.filter(m => m.mutationName === (isDictionary ? updateOrCreatePrefix : createPrefix) + entityName).forEach(m => {
                 const entityMutationFormStr = getMutationFormFC(aggName, entityName, m, "Create", isDictionary)
 
                 if (entityMutationFormStr) {
@@ -68,7 +68,7 @@ const config: CodegenConfig = {
 
 
               // Generate Update Form
-              entity.entityMutationList.filter(m => m.mutationName === (isDictionary ? updateOrCreatePrefix : updatePrefix) + entityName).forEach(m => {
+              entity.mutationList.filter(m => m.mutationName === (isDictionary ? updateOrCreatePrefix : updatePrefix) + entityName).forEach(m => {
                 const entityMutationFormStr = getMutationFormFC(aggName, entityName, m, "Update", isDictionary)
 
                 if (entityMutationFormStr) {
@@ -78,7 +78,7 @@ const config: CodegenConfig = {
               })
 
               // Generate Delete Form
-              entity.entityMutationList.filter(m => m.mutationName === deletePrefix + entityName).forEach(m => {
+              entity.mutationList.filter(m => m.mutationName === deletePrefix + entityName).forEach(m => {
                   writeFileSync(entityPath + entityName + "Delete.tsx", getEntityDeleteFC(aggName, entityName, m))
               })
             }

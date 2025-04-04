@@ -1,7 +1,7 @@
-import { DefinitionNode, DocumentNode, FieldNode, FragmentDefinitionNode, InputObjectTypeDefinitionNode, ObjectTypeDefinitionNode, OperationDefinitionNode, SelectionNode, TypeNode, VariableDefinitionNode } from 'graphql'
-import { GeneratedFcForAgg, AggList, TypedField, Query, Mutation, TypedInput, MutationKind } from './utils/types/Basic'
+import { DefinitionNode, DocumentNode, FieldDefinitionNode, FieldNode, FragmentDefinitionNode, InputObjectTypeDefinitionNode, ObjectTypeDefinitionNode, OperationDefinitionNode, SelectionNode, TypeNode, VariableDefinitionNode } from 'graphql'
+import { GeneratedFcForAgg, AggList, TypedField, Query, Mutation, TypedInput, MutationKind, FormGenConfig, RefField } from './utils/types/Basic'
 import { extractBusinessObjectTypeNodeList, extractEmbeddedObjectTypeNodeList, extractInputObjectTypeNodeList, toUpperCaseFirstLetter } from './utils/BaseUtils'
-import { searchPrefix, entityPrefix, primitiveTypeList, referencePrefix, referencePostfix, createPrefix } from './utils/Constants'
+import { searchPrefix, entityPrefix, primitiveTypeList, referencePrefix, referencePostfix, createPrefix, enumPrefix, entityCollectionPrefix, aggregateRootFieldName } from './utils/Constants'
 // import { getMainMenuFC, getAggMenuFC } from './formgen-templates/antd/FCTmpl'
 
 const { SIMPLE, ON_INSTANCE } = MutationKind
@@ -121,7 +121,11 @@ const extractTypedFieldList = (queryType: string,
     return typedFieldList
 }
 
-const getQueryList = (documentNode: DocumentNode, businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[], embeddedObjectTypeNodeList: readonly ObjectTypeDefinitionNode[]): Query[] => {
+const getQueryList = (
+    documentNode: DocumentNode,
+    businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[],
+    embeddedObjectTypeNodeList: readonly ObjectTypeDefinitionNode[]
+): Query[] => {
 
     const result: Query[] = []
     const queryOperationDefinitionList = extractQueryOperationDefinitionList(documentNode.definitions)
@@ -166,6 +170,7 @@ const getQueryList = (documentNode: DocumentNode, businessObjectTypeNodeList: re
 const extractInputObjectTypeFieldList = (
     inputObjectType: TypeNode,
     inputObjectTypeNodeList: readonly InputObjectTypeDefinitionNode[],
+    businessObjectTypeNodeList: ObjectTypeDefinitionNode | undefined,
     path?: string
 ): TypedInput[] => {
 
@@ -177,11 +182,20 @@ const extractInputObjectTypeFieldList = (
             .find(inputObjectType => inputObjectType.name.value === inputObjectTypeName)?.fields
             ?.forEach(inputObjectTypeField => {
 
+                const inputName = inputObjectTypeField.name.value
+                const objectField = businessObjectTypeNodeList?.fields?.find(f => f.name.value === inputName)
+
+                const fieldType = (objectField) ? extractTypeName(objectField.type) : undefined
+
+
                 const fieldTypeName = extractTypeName(inputObjectTypeField.type) ?? ""
                 result.push({
-                    inputName: inputObjectTypeField.name.value,
+                    inputName: inputName,
                     inputPath: "",
-                    inputType: primitiveTypeList.includes(fieldTypeName) ? fieldTypeName : extractInputObjectTypeFieldList(inputObjectTypeField.type, inputObjectTypeNodeList, "",)
+                    inputRefTypeName: { refAggName: "", refEntityName: fieldType ?? "" },
+                    inputType: (primitiveTypeList.includes(fieldTypeName) || fieldTypeName.startsWith(enumPrefix)) ?
+                        fieldTypeName :
+                        extractInputObjectTypeFieldList(inputObjectTypeField.type, inputObjectTypeNodeList, businessObjectTypeNodeList, "")
                 })
             })
     }
@@ -193,15 +207,23 @@ const extractInputObjectTypeFieldList = (
 const extractVariableTypedInput = (
     variableDefinition: VariableDefinitionNode,
     inputObjectTypeNodeList: readonly InputObjectTypeDefinitionNode[],
+    businessObjectTypeNodeList: ObjectTypeDefinitionNode | undefined,
     inputPath?: string,
 ): TypedInput => {
 
     const variableTypeName = extractTypeName(variableDefinition.type) ?? ""
 
+    const inputName = variableDefinition.variable.name.value
+
+    // const objectField = businessObjectTypeNodeList?.fields?.find(f => f.name.value === inputName)
+
+    // const fieldType = (objectField) ? extractTypeName(objectField.type) : undefined
+
     const result: TypedInput = {
-        inputName: variableDefinition.variable.name.value,
+        inputName: inputName,
         inputPath: inputPath ?? "",
-        inputType: primitiveTypeList.includes(variableTypeName) ? variableTypeName : extractInputObjectTypeFieldList(variableDefinition.type, inputObjectTypeNodeList, "")
+        inputRefTypeName: { refAggName: "", refEntityName: "" },
+        inputType: primitiveTypeList.includes(variableTypeName) ? variableTypeName : extractInputObjectTypeFieldList(variableDefinition.type, inputObjectTypeNodeList, businessObjectTypeNodeList, "")
     }
 
     return result
@@ -213,7 +235,6 @@ const getMutationList = (
     fragmentDefinitionList: FragmentDefinitionNode[],
     businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[],
     embeddedObjectTypeNodeList: readonly ObjectTypeDefinitionNode[]
-
 ): Mutation[] => {
 
     const result: Mutation[] = []
@@ -247,7 +268,7 @@ const getMutationList = (
         }
 
         md.variableDefinitions?.forEach(vd => {
-            mutation.inputList.push(extractVariableTypedInput(vd, inputObjectTypeNodeList, ""))
+            mutation.inputList.push(extractVariableTypedInput(vd, inputObjectTypeNodeList, businessObjectTypeNodeList.find(f => f.name.value === entityPrefix.concat(entityName))))
         })
 
         result.push(mutation)
@@ -257,10 +278,60 @@ const getMutationList = (
     return result
 }
 
+
+const isCollectionField = (dn: FieldDefinitionNode): boolean => {
+    if (extractTypeName(dn.type)?.startsWith(entityCollectionPrefix))
+        return true
+
+    return false
+}
+
+const extractEntityRefList = (parentEntityName: string, fdn: FieldDefinitionNode, businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[]): RefField => {
+
+    const fieldName = extractTypeName(fdn.type)
+    const typeName = fieldName ? fieldName.substring(entityCollectionPrefix.length) : ""
+
+    const boFields = businessObjectTypeNodeList
+        .find(x => x.name.value === entityPrefix.concat(typeName))?.fields
+
+    const backRefereceAttributeName = boFields ?
+        boFields.find(f => extractTypeName(f.type) === parentEntityName && f.name.value !== aggregateRootFieldName)?.name.value : ""
+
+
+    return {
+        isCollection: true,
+        fieldType: typeName ? typeName : "",
+        fieldName: fdn.name.value,
+        backRefereceAttributeName: backRefereceAttributeName
+    }
+
+}
+
+const extractEntityListWithChildEntityList = (
+    businessObjectTypeNodeList: readonly ObjectTypeDefinitionNode[]
+): {
+    entityName: string
+    childEntityRefList: RefField[]
+}[] => {
+
+    return businessObjectTypeNodeList.map(bo => {
+        const entityName = bo.name.value.substring(entityPrefix.length)
+        return {
+            entityName: entityName,
+            childEntityRefList: bo.fields ?
+                bo.fields.filter(x => extractTypeName(x.type)?.startsWith(entityCollectionPrefix))
+                    .map(x => extractEntityRefList(entityName, x, businessObjectTypeNodeList))
+                : []
+        }
+    })
+
+    return []
+}
+
 export const getFormData = (
     astNode: DocumentNode,
     documents: { location: string, document: DocumentNode }[],
-    config: any
+    config: FormGenConfig
 ): string => {
 
     const businessObjectTypeNodeList = extractBusinessObjectTypeNodeList(astNode)
@@ -269,6 +340,8 @@ export const getFormData = (
 
 
     const aggTabList: GeneratedFcForAgg[] = []
+
+    const entityListWithChildEntityList = extractEntityListWithChildEntityList(businessObjectTypeNodeList)
 
     documents.forEach(doc => {
 
@@ -279,22 +352,44 @@ export const getFormData = (
         const entityName = locationTail[1].split(".").slice(-2)[0]
 
         const resultTab = aggTabList.find(f => f.aggName === aggName) ??
-            aggTabList[aggTabList.push({ aggName: aggName, /* aggMenuFC: "", */ entityNameList: [] }) - 1]
+            aggTabList[aggTabList.push({ aggName: aggName, entityList: [] }) - 1]
 
-        resultTab.entityNameList.push({
-            entityName: entityName,
-            entityQueryList: getQueryList(doc.document, businessObjectTypeNodeList, embeddedObjectTypeNodeList),
-            entityMutationList: getMutationList(
+        resultTab.entityList.push({
+            name: entityName,
+            queryList: getQueryList(doc.document, businessObjectTypeNodeList, embeddedObjectTypeNodeList),
+            mutationList: getMutationList(
                 entityName,
                 doc.document,
                 inputObjectTypeNodeList,
                 extractFragmentDefinitionList(doc.document.definitions),
                 businessObjectTypeNodeList,
                 embeddedObjectTypeNodeList
-            )
+            ),
+            childEntityRefList: entityListWithChildEntityList.find(e => e.entityName == entityName)?.childEntityRefList ?? []
         })
 
+    })
 
+    aggTabList.forEach(a => {
+        a.entityList.forEach(e => {
+            e.mutationList.forEach(m => {
+                m.inputList.forEach(i => {
+                    // todo: absolute input parameters trash!!!! Fix Fix Fix!!!!!! Immediate!!!
+                    if (typeof i.inputType !== "string") {
+                        i.inputType.forEach(it => {
+                            const refEntityName = it.inputRefTypeName.refEntityName
+                            if (refEntityName !== "") {
+                                const realEntityName = (refEntityName.startsWith(referencePrefix) && refEntityName.endsWith(referencePostfix)) ?
+                                    refEntityName.substring(referencePrefix.length).slice(0, -referencePostfix.length) : refEntityName
+    
+                                it.inputRefTypeName.refAggName = aggTabList.find(a => a.entityList.find(e => e.name === realEntityName))?.aggName ?? ""
+                            }
+    
+                        })
+                    }
+                })
+            })
+        })
     })
 
     const result: AggList = {

@@ -1,3 +1,8 @@
+export interface FormGenConfig {
+    generateChildCollectionField: boolean
+}
+
+
 export enum MutationKind {
     SIMPLE = 'SIMPLE',
     ON_INSTANCE = 'ON_INSTANCE'
@@ -13,6 +18,7 @@ export interface TypedField {
 export interface TypedInput {
     inputName: string
     inputPath: string
+    inputRefTypeName: {refAggName: string, refEntityName: string}
     inputType: string | TypedInput[]
 }
 
@@ -24,10 +30,6 @@ export interface GeneratedGqlForAggregate {
     }[]
 }
 
-export interface FcStr {
-    fcName: string
-    fcStr: any
-}
 
 export interface QueryData {
     name: string
@@ -38,7 +40,6 @@ export interface Query {
     queryAlias: string
     queryName: string
     queryType: string
-//    fcStr: any
     fieldList: TypedField[]
 }
 
@@ -46,21 +47,35 @@ export interface Mutation {
     mutationAlias: string
     mutationName: string
     mutationType: MutationKind
-//    fcStr: any
     inputList: TypedInput[]
     getQueryFieldList: TypedField[]
 }
 
+export interface RefField {
+    fieldName: string
+    fieldType: string
+    isCollection: boolean
+    backRefereceAttributeName: string | undefined
+}
+
+export interface Entity {
+    name: string
+    queryList: Query[]
+    mutationList: Mutation[]
+    childEntityRefList: RefField[]
+
+}
+
 export interface GeneratedFcForAgg {
-    aggName: string;
-    // aggMenuFC: string;
-    entityNameList: {
-        entityName: string;
-        entityQueryList?: Query[];
-        entityMutationList?: Mutation[];
-    }[];
+    aggName: string
+    entityList: Entity[]
 }
 export interface AggList {
-    // mainMenuFC: string;
-    aggList: GeneratedFcForAgg[];
+    aggList: GeneratedFcForAgg[]
 }
+
+
+
+
+
+
