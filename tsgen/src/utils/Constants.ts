@@ -23,7 +23,7 @@ export const rootDictionaryTypeName = "RootDictionary"
 export const statusTypeName = "Status"
 export const systemTypesList = [
     rootDictionaryTypeName, "Stakeholder", "Status", "StatusGraph", "SysAdminSettings"
-    , "SysOperation", "SysCheckSelect", "SysParamAddition", "SysRootSecurity"
+    , "SysOperation", "SysCheckSelect", "SysParamAddition", "SysRootSecurity", "SysRequestControl"
 ].map(t => entityPrefix.concat(t))
 export const mandatoryFieldList = ['id', '__typename']
 export const systemFieldList = [
