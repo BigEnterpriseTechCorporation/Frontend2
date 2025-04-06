@@ -11,7 +11,7 @@
     "@types/react-dom": "16.9.10",
     "antd": "4.13.0",
     "graphql": "15.4.0",
-    "keycloak-js": "^15.0.1",
+    "keycloak-js": "^25.0.2",
     "moment": "^2.29.4",
     "process": "0.11.10",
     "react": "^18.3.1",
@@ -60,7 +60,7 @@
     "allgen": "graphql-codegen --config gqlgen.ts && graphql-codegen --config codegen.ts && graphql-codegen --config formgen.ts",
     "tsgen:build": "cd tsgen && npm run build",
     "bundle": "webpack",
-    "get-schema": "get-graphql-schema http://localhost:8080/graphql > src/graphql/schema.graphql",
+    "get-schema": "get-graphql-schema https://rpi.tail707b9c.ts.net/api/graphql > src/graphql/schema.graphql",
     "rm-allgen": "del-cli src/__generate/* && del-cli src/graphql/__generate/* && del-cli src/components/__generate/*"
   },
   "eslintConfig": {

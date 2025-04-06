@@ -1,0 +1,9 @@
+{
+    "realm": "volunteers",
+    "auth-server-url": "https://rpi.tail707b9c.ts.net/cloaka/",
+    "ssl-required": "external",
+    "resource": "twc",
+    "public-client": true,
+    "confidential-port": 0,
+    "useResourceRoleMappings": true
+}
