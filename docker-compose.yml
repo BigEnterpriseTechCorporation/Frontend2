@@ -6,8 +6,7 @@ services:
     image: frontend2
     container_name: dashboard
     restart: unless-stopped
-    networks:
-      - app-network
+    network_mode: "host"
     ports:
       - "3000:3000"
     environment:
