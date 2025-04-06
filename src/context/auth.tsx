@@ -44,7 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .then(setIsAuth)
       .then(() => keycloak.loadUserInfo())
       .then(info => {
-        const hasUserRole = keycloak.resourceAccess?.['twc']?.roles.includes('user');
+        const hasUserRole = keycloak.resourceAccess?.['twc-prod']?.roles.includes('user');
         
         if (!hasUserRole) {
           keycloak.logout();
