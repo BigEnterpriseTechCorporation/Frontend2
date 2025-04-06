@@ -65,7 +65,7 @@ export const VolonteerAgg: FC = () => {
     return (
         <Layout style={{ 
             minHeight: '100vh',
-            ...pixelArtStyles.stripedBackground,
+        
             fontFamily: '"Press Start 2P", monospace'
         }}>
             <Content style={{ padding: '16px' }}>

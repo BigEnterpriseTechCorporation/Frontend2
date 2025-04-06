@@ -34,7 +34,7 @@ const menuItems = [
     key: 'homepage',
     icon: <HomeOutlined style={{ fontSize: '20px' }} />,
     label: 'Homepage',
-    path: '/homepage',
+    path: '/',
     children: [] // No submenu for homepage
   },
   {
@@ -339,7 +339,7 @@ export const MainMenu: FC = () => {
                     onClick={() => handleMenuClick('homepage')}
                   >
                     <Link 
-                      to="/homepage"
+                      to="/"
                       style={{ 
                         display: 'flex', 
                         alignItems: 'center', 
@@ -876,16 +876,15 @@ export const MainMenu: FC = () => {
               minHeight: 280
             }}>
               <Routes>
-                <Route key={"Home"} path="/" element={<Home />}>
-                  <Route key={"OrganizationAgg"} path="OrganizationAgg" element={<OrganizationAgg />}>
-                    {OrganizationAggRouteList()}
-                  </Route>
-                  <Route key={"PersonAgg"} path="PersonAgg" element={<PersonAgg />}>
-                    {PersonAggRouteList()}
-                  </Route>
-                  <Route key={"VolonteerAgg"} path="VolonteerAgg" element={<VolonteerAgg />}>
-                    {VolonteerAggRouteList()}
-                  </Route>
+                <Route path="/" element={<HomePage />} />
+                <Route key={"OrganizationAgg"} path="/OrganizationAgg" element={<OrganizationAgg />}>
+                  {OrganizationAggRouteList()}
+                </Route>
+                <Route key={"PersonAgg"} path="/PersonAgg" element={<PersonAgg />}>
+                  {PersonAggRouteList()}
+                </Route>
+                <Route key={"VolonteerAgg"} path="/VolonteerAgg" element={<VolonteerAgg />}>
+                  {VolonteerAggRouteList()}
                 </Route>
                 <Route key={"Homepage"} path="/homepage" element={<HomePage />} />
               </Routes>
